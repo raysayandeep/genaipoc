@@ -1,0 +1,7 @@
+/Include/*
+/Lib/*
+/Scripts/*
+pyvenv.cfg
+/src/.env
+/src/backend/__pycache__/*
+/src/llm/__pycache__/*
