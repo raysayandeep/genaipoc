@@ -1,4 +1,3 @@
-from langchain_cohere import CohereEmbeddings
 from langchain_core.documents import Document
 from langchain_postgres import PGVector
 from langchain_postgres.vectorstores import PGVector
