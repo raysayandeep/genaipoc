@@ -12,7 +12,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 embeddings = BedrockEmbeddings()
 groq_api_key = "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"
-llm = llm=ChatGroq(groq_api_key=groq_api_key,model_name="Gemma2-9b-It")
+llm = ChatGroq(groq_api_key=groq_api_key,model_name="Gemma2-9b-It")
 file_path = "src/sample_m.pdf"
 loader = PyPDFLoader(file_path)
 documents = loader.load()

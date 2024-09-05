@@ -1,6 +1,7 @@
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from typing import Literal
+import os
 from langchain_aws import BedrockEmbeddings
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.embeddings import FakeEmbeddings
@@ -11,6 +12,12 @@ from langchain_postgres import PGVector
 from langchain_postgres.vectorstores import PGVector
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.document_loaders import UnstructuredExcelLoader
+from langchain_community.document_loaders.csv_loader import CSVLoader
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain import hub
+import pandas as pd
+
 from uuid import uuid4
 from dotenv import load_dotenv
 load_dotenv()
@@ -38,6 +45,21 @@ def customPDFLoader(filepath):
     chunks = splitter.split_documents(documents)
     return chunks
 
+def customCSVLoader(filepath):
+    documents = []
+    file_list = []
+    if os.path.exists(filepath):
+        file_list = processExcel(filepath)
+    for file in file_list:
+        loader = CSVLoader(file_path = file,csv_args={"delimiter": ",","quotechar": '"'})
+        docs = loader.load()
+        for i in range(len(docs)):
+            documents.append(docs[i])
+    
+    return documents
+
+
+
 def customExcelLoader(filepath):
     try:
         loader = UnstructuredExcelLoader(filepath, mode="elements")
@@ -51,7 +73,7 @@ def postgresVectorStore(embedding,filename,connection):
     #connection = "postgresql+psycopg://langchain:langchain@localhost:5433/langchain"
 
     connection = connection
-    collection_name = filename
+    collection_name = 'vector_store'
 
     vector_store = PGVector(
     embeddings=embedding,
@@ -66,8 +88,8 @@ def addDataToPostgresVectorStore(vector_store,documents):
     try:
         ind = vector_store.add_documents(documents, ids=uuids)
         return ind
-    except Exception:
-        return False
+    except Exception as e:
+        return e
     
 def faissVectorStoreOld(embedding,documents):
     vectorstore = FAISS.from_documents(
@@ -116,24 +138,43 @@ def loadFaissVectorStore(filename,embedding):
 
 def vectorRetriever(vector_store):
     #return vectorstore.as_retriever()
-    return vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 10})
+    #return vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 10})
+    return vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 100})
 
 def initLlm():
     llm =ChatGroq(model_name="Gemma2-9b-It")
     return llm
+
+def processExcel(filepath):
+    file_list = []
+    if os.path.exists(filepath):
+        filename = os.path.splitext(os.path.basename(filepath))[0]
+        df_data = pd.read_excel(filepath,sheet_name=None)
+        if isinstance(df_data, dict):
+            if not os.path.exists(f"temp/{filename}"):
+                os.mkdir(f"temp/{filename}")
+            for key in df_data.keys():
+                new_file = f'temp/{filename}/{filename}_{key}.csv'
+                df_data[key].to_csv(new_file,index=False)
+                file_list.append(new_file)
+    return file_list
 
 if __name__ == '__main__':
     
     
 
     """PostgreSQL"""
-    #filename = "sample_m.pdf"
+    """ filepath = "../samples/SampleData.xlsx"
+    filename = os.path.basename(filepath)
+
     #documents = customPDFLoader(filename)
-    """ filename = 'saledata.xlsx'
-    embedding = initfakeEmbedding()
+    documents = customExcelLoader(filepath)
+    #documents = customCSVLoader(filepath)
+    #print(*(docs.page_content for docs in documents))
+    print(type(documents))
+    embedding = initOllamaEmbedding()
     connection = "postgresql://postgres:sdr@localhost:5432/postgres"
     vector_store = postgresVectorStore(embedding,filename,connection)
-    documents = customExcelLoader(filename)
     if documents:
         if vector_store:
             success = addDataToPostgresVectorStore(vector_store,documents)
@@ -146,9 +187,10 @@ if __name__ == '__main__':
         
 
     """FAISS"""
-    """ filename = "sample_m.pdf"
-    documents = customPDFLoader(filename)
-    embedding = initfakeEmbedding()
+    """ filepath = "../samples/SampleData.xlsx"
+    filename = os.path.basename(filepath)
+    documents = customCSVLoader(filepath)
+    embedding = initOllamaEmbedding()
     vector_store = createFaissVectorStore(embedding,filename)
     if vector_store:
         addDataToFaissVectorStore(vector_store,documents)
@@ -157,15 +199,34 @@ if __name__ == '__main__':
             print("Data Saved") """
 
     """Retrieval"""
-    filename = "sample_m.pdf"
-    embedding = initfakeEmbedding()
-    #vector_store = loadFaissVectorStore(filename,embedding)
-    connection = "postgresql://postgres:sdr@localhost:5432/langchain"
-    vector_store = postgresVectorStore(embedding,filename,connection)
-    if vector_store:
-        retriever = vectorRetriever(vector_store)
-        print(retriever.invoke("latex"))
+    filepath = "../samples/SampleData.xlsx"
+    filename = os.path.basename(filepath)
     
+    embedding = initOllamaEmbedding()
+    #vector_store = loadFaissVectorStore(filename,embedding)
+    connection = "postgresql://postgres:sdr@localhost:5432/postgres"
+    vector_store = postgresVectorStore(embedding,filename,connection)
+    #vector_store = loadFaissVectorStore(filename,embedding)
+    if vector_store:
+        print("Vector OK")
+        retriever = vectorRetriever(vector_store)
+        
+    
+        groq_api_key = ""
+        llm=ChatGroq(groq_api_key=groq_api_key,model_name="llama-3.1-70b-versatile")
+
+        prompt = hub.pull("rlm/rag-prompt")
+
+        rag_chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        )
+        question="Waht is pencil unit price for central region"
+        #print(retriever.invoke(question))
+        print(rag_chain.invoke(question).content)
+
+
 
    
     
